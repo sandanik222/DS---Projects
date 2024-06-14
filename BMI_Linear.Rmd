@@ -1,0 +1,146 @@
+---
+title: "Project_Quanti_Response"
+author: "Sandani Kumanayake"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Simple Marginal Linear Regressions
+
+```{r}
+
+train_data <- read.csv("/Users/sandanikumanayake/Desktop/Data Science/Project/quant_subsample.csv")
+test_data <- read.csv("/Users/sandanikumanayake/Desktop/Data Science/Project/test_data.csv")
+
+train_data <- train_data[, !names(train_data) %in% "X"]
+
+```
+
+```{r}
+
+library(caret)
+
+predictors <- setdiff(names(train_data), "BMI")
+cv_test_errors <- numeric(length(predictors))
+
+for (i in seq_along(predictors)) {
+  formula <- as.formula(paste("BMI ~", predictors[i]))
+  fold_test_errors <- numeric(10) 
+  folds <- createFolds(train_data$BMI, k = 10, list = TRUE, returnTrain = FALSE)
+  
+  for(j in seq_along(folds)) {
+    train_indices <- setdiff(seq_len(nrow(train_data)), folds[[j]])
+    test_indices <- folds[[j]]
+    train_subset <- train_data[train_indices, ]
+    test_subset <- train_data[test_indices, ]
+    
+    model <- lm(formula, data = train_subset)
+    predictions <- predict(model, newdata = test_subset)
+    fold_test_errors[j] <- mean((test_subset$BMI - predictions)^2)
+  }
+  cv_test_errors[i] <- mean(fold_test_errors)
+}
+
+
+best_predictor_index <- which.min(cv_test_errors)
+best_predictor <- predictors[best_predictor_index]
+best_error <- cv_test_errors[best_predictor_index]
+
+cat("The best model uses the predictor:", best_predictor, "\nwith a CV test error of:", best_error, "\n")
+
+```
+
+
+```{r}
+
+library(leaps)
+library(caret)
+
+subset_selection <- regsubsets(BMI ~ ., data = train_data)
+summary_selection <- summary(subset_selection)
+
+min_cp_index <- which.min(summary_selection$cp)
+cat("The model with the minimum Cp value uses", min_cp_index, "predictors.\n")
+
+plot(summary_selection$cp, type = "o", pch = 20, col = "blue", main = "Mallows' Cp for Different Models", xlab = "Number of Predictors", ylab = "Mallows' Cp")
+abline(v = min_cp_index, col = "red", lwd = 2)
+
+
+
+```
+
+
+
+
+```{r}
+
+formula <- as.formula("BMI ~ .")
+
+# Best subset selection
+leaps_best <- regsubsets(formula, data = train_data, nvmax = 8, method = "exhaustive")
+plot(leaps_best, scale = "Cp", main = "Best Subset Selection")
+
+# Forward stepwise selection
+leaps_forward <- regsubsets(formula, data = train_data, nvmax = 8, method = "forward")
+plot(leaps_forward, scale = "Cp", main = "Forward Stepwise Selection")
+
+# Backward stepwise selection
+leaps_backward <- regsubsets(formula, data = train_data, nvmax = 8, method = "backward")
+plot(leaps_backward, scale = "Cp", main = "Backward Stepwise Selection")
+
+```
+
+
+
+
+```{r}
+
+formula_best <- BMI ~ HighBP + Smoker + PhysActivity + GenHlth + DiffWalk + Sex + Age +      Diabetes_01
+
+train_control <- trainControl(method = "cv", number = 10, savePredictions = "final", 
+                              summaryFunction = defaultSummary)
+
+cv_model <- train(formula_best, data = train_data, method = "lm",
+                  trControl = train_control, preProcess = "scale")
+
+cv_test_error_mse <- min(cv_model$results$RMSE^2)
+cat("The cross-validation MSE of the model is:", cv_test_error_mse, "\n")
+
+```
+
+
+
+## 
+
+```{r}
+
+train_data <- train_data %>%
+  mutate(log_Age = log(Age + 1),            
+         PhysHlth2 = PhysHlth^2)            
+
+enhanced_model_formula <- BMI ~ HighBP + Smoker + PhysActivity + GenHlth + DiffWalk + Sex + 
+                           Age + Diabetes_01 + log_Age + PhysHlth2 + GenHlth:Diabetes_01 + HighBP:Sex
+
+enhanced_model <- lm(formula = enhanced_model_formula, data = train_data)
+summary(enhanced_model)
+
+```
+
+
+```{r}
+
+train_control <- trainControl(method = "cv", number = 10, savePredictions = "final", 
+                              summaryFunction = defaultSummary)
+
+cv_model <- train(enhanced_model_formula, data = train_data, method = "lm",
+                  trControl = train_control, preProcess = "scale")
+
+cv_test_error_mse <- min(cv_model$results$RMSE^2)
+cat("The cross-validation MSE of the model is:", cv_test_error_mse, "\n")
+```
+
+

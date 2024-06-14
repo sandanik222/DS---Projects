@@ -1,0 +1,240 @@
+---
+title: "Classification models"
+author: "Sandani Kumanayake"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+
+train_data <- read.csv("/Users/sandanikumanayake/Desktop/Data Science/Project/train_data.csv")
+test_data <- read.csv("/Users/sandanikumanayake/Desktop/Data Science/Project/test_data.csv")
+
+```
+
+```{r}
+sum(is.na(train_data))
+```
+
+
+## Decision Tree (with pruning)
+
+```{r}
+
+library(rpart)
+library(rpart.plot)
+library(caret)
+
+train_data$Diabetes_01 <- factor(train_data$Diabetes_01, levels = c(1, 0), labels = c("Yes", "No"))
+
+tree_model <- rpart(Diabetes_01 ~ ., data = train_data, method = "class")
+printcp(tree_model)  
+
+optimal_cp <- tree_model$cptable[which.min(tree_model$cptable[,"xerror"]),"CP"]
+cat("Optimal CP:", optimal_cp, "\n")
+
+pruned_tree <- prune(tree_model, cp = optimal_cp)
+rpart.plot(pruned_tree, main = "Pruned Decision Tree")
+
+set.seed(123)
+fitControl <- trainControl(
+  method = "cv",
+  number = 10,
+  savePredictions = "final",
+  classProbs = TRUE,  
+  summaryFunction = twoClassSummary 
+)
+
+cv_model <- train(
+  Diabetes_01 ~ ., 
+  data = train_data, 
+  method = "rpart", 
+  trControl = fitControl, 
+  tuneGrid = data.frame(cp = optimal_cp),
+  metric = "ROC"  
+)
+
+
+print(cv_model)
+summary(cv_model$results)
+
+predicted <- predict(cv_model, newdata = train_data)
+actual <- train_data$Diabetes_01
+conf_matrix <- confusionMatrix(predicted, actual)
+accuracy <- sum(predicted == actual) / length(actual)
+
+cat("Cross-validated Accuracy:", accuracy, "\n")
+print("Cross-validated Confusion Matrix:")
+print(conf_matrix)
+
+```
+
+```{r}
+
+
+
+```
+
+
+```{r}
+
+predicted_probs <- predict(cv_model, newdata = train_data, type = "prob")
+predicted_probs_yes <- predicted_probs$Yes
+
+actual_numeric <- as.numeric(train_data$Diabetes_01) - 1  # Converts factor to 0 and 1 where 1 is "Yes".
+mse <- mean((actual_numeric - predicted_probs_yes)^2)
+cat("Cross-validated MSE:", mse, "\n")
+
+```
+
+
+
+
+## Bagging (with variable importance)
+
+```{r, message=FALSE}
+
+library(ipred)
+library(caret)
+
+train_data$Diabetes_01 <- factor(train_data$Diabetes_01, levels = c(1, 0), labels = c("Yes", "No"))
+
+set.seed(123)
+
+# Train a generic bagging model 
+bagging_model <- bagging(Diabetes_01 ~ ., data = train_data, nbagg = 500)
+
+print(bagging_model)
+
+fitControl <- trainControl(
+  method = "cv",
+  number = 10,
+  savePredictions = "final",
+  classProbs = TRUE,  
+  summaryFunction = twoClassSummary
+)
+
+cv_model <- train(
+  Diabetes_01 ~ .,
+  data = train_data,
+  method = "treebag",  
+  trControl = fitControl,
+  number = 500  
+)
+
+print(cv_model)
+summary(cv_model$results)
+
+predicted <- predict(cv_model, newdata = train_data)
+
+conf_matrix <- confusionMatrix(predicted, train_data$Diabetes_01)
+print(conf_matrix)
+accuracy <- sum(predicted == train_data$Diabetes_01) / length(train_data$Diabetes_01)
+cat("Cross-validated Accuracy:", accuracy, "\n")
+
+
+```
+
+
+## Random Forest (with variable imprtance)
+
+```{r}
+
+library(randomForest)
+library(caret)
+
+set.seed(123)
+rf_model <- randomForest(Diabetes_01 ~ ., data = train_data, importance = TRUE, ntree = 500)
+
+print(rf_model)
+importance(rf_model)
+varImpPlot(rf_model)
+
+fitControl <- trainControl(
+  method = "cv",
+  number = 10,
+  savePredictions = "final",
+  classProbs = TRUE,  
+  summaryFunction = twoClassSummary 
+)
+
+cv_model <- train(
+  Diabetes_01 ~ .,
+  data = train_data,
+  method = "rf",
+  trControl = fitControl,
+  tuneGrid = data.frame(.mtry = sqrt(ncol(train_data) - 1)),
+  metric = "ROC",
+  ntree = 500
+)
+
+print(cv_model)
+summary(cv_model$results)
+
+predicted <- predict(cv_model, newdata = train_data)
+conf_matrix <- confusionMatrix(predicted, train_data$Diabetes_01)
+print(conf_matrix)
+accuracy <- sum(predicted == train_data$Diabetes_01) / length(train_data$Diabetes_01)
+cat("Cross-validated Accuracy:", accuracy, "\n")
+
+
+```
+
+
+## Boosting (including selecting the tuning parameter)
+ 
+```{r}
+
+library(gbm)
+library(caret)
+
+train_data$Diabetes_01 <- factor(train_data$Diabetes_01, levels = c(1, 0), labels = c("Yes", "No"))
+
+set.seed(123)
+
+fitControl <- trainControl(
+  method = "cv",
+  number = 10,
+  verboseIter = TRUE,
+  savePredictions = "final",
+  classProbs = TRUE,  
+  summaryFunction = twoClassSummary 
+)
+
+
+boosting_model <- train(
+  Diabetes_01 ~ .,
+  data = train_data,
+  method = "gbm",
+  trControl = fitControl,
+  verbose = FALSE,
+  metric = "ROC",
+  tuneGrid = expand.grid(
+    interaction.depth = c(1, 3, 5),  # Depth of each tree
+    n.trees = c(50, 100, 150),        # Number of trees
+    shrinkage = c(0.01, 0.1),         # Learning rate
+    n.minobsinnode = c(10, 20)        # Minimum number of observations in the nodes
+  )
+)
+
+
+print(boosting_model)
+
+importance <- varImp(boosting_model, scale = FALSE)
+plot(importance)
+
+predicted <- predict(boosting_model, newdata = train_data)
+
+conf_matrix <- confusionMatrix(predicted, train_data$Diabetes_01)
+print(conf_matrix)
+accuracy <- sum(predicted == train_data$Diabetes_01) / length(train_data$Diabetes_01)
+cat("Cross-validated Accuracy:", accuracy, "\n")
+
+```
+ 
+ 

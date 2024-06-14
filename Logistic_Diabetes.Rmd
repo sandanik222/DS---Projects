@@ -1,0 +1,129 @@
+---
+title: "Project_Quali_Response"
+author: "Sandani Kumanayake"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+train_data <- read.csv("/Users/sandanikumanayake/Desktop/Data Science/Project/train_data.csv")
+test_data <- read.csv("/Users/sandanikumanayake/Desktop/Data Science/Project/test_data.csv")
+
+```
+
+```{r}
+sum(is.na(train_data))
+```
+
+```{r}
+
+library(MASS)
+
+initial_model <- glm(Diabetes_01 ~ ., data = train_data, family = binomial())
+
+stepwise_model <- stepAIC(initial_model, direction = "backward", trace = 0)
+summary(stepwise_model)
+
+```
+
+
+
+```{r}
+library(boot)  
+library(dplyr)
+
+
+model <- glm(Diabetes_01 ~ HighBP + HighChol + CholCheck + BMI + 
+    Stroke + HeartDiseaseorAttack + PhysActivity + Fruits + HvyAlcoholConsump + 
+    NoDocbcCost + GenHlth + PhysHlth + DiffWalk + Sex + Age + 
+    Education + Income, family = binomial(), data = train_data)
+
+cv_result <- cv.glm(train_data, model, K = 10)
+
+print(cv_result$delta[1])
+
+```
+
+
+```{r}
+library(caret)
+
+predicted_probs <- predict(model, type = "response")
+predicted_classes <- ifelse(predicted_probs > 0.5, 1, 0)
+
+actual_classes <- factor(train_data$Diabetes_01, levels = c(1, 0), labels = c("Yes", "No"))
+predicted_classes <- factor(predicted_classes, levels = c(1, 0), labels = c("Yes", "No"))
+
+accuracy <- mean(predicted_classes == actual_classes)
+print(paste("Accuracy of the model: ", accuracy))
+
+conf_matrix <- confusionMatrix(predicted_classes, actual_classes)
+print(conf_matrix)
+
+```
+
+
+```{r, message=FALSE}
+
+library(pROC)
+
+roc_result <- roc(actual_classes, predicted_probs)
+plot(roc_result, main="ROC Curve")
+auc_score <- auc(roc_result)
+text(x = 0.3, y = 0.3, labels = paste("AUC =", round(auc_score, 3)), cex = 1.0, col = "blue")
+
+
+```
+
+
+
+
+
+
+```{r}
+
+
+train_data <- train_data %>%
+  mutate(log_BMI = log(BMI + 1),  
+         log_Age = log(Age + 1)) 
+
+model_1 <- glm(Diabetes_01 ~ HighBP + HighChol + CholCheck + log_BMI + 
+             Stroke + HeartDiseaseorAttack + PhysActivity + Fruits + HvyAlcoholConsump + 
+             NoDocbcCost + GenHlth + PhysHlth + DiffWalk + Sex + log_Age + 
+             Education + Income + HighBP:HighChol + Age:Income,  
+             family = binomial(), data = train_data)
+
+
+summary(model_1)
+cv_result <- cv.glm(train_data, model_1, K = 10)
+print(cv_result$delta[1])
+```
+
+
+```{r}
+
+predicted_probs <- predict(model_1, type = "response")
+predicted_classes <- ifelse(predicted_probs > 0.5, 1, 0)
+
+actual_classes <- factor(train_data$Diabetes_01, levels = c(1, 0), labels = c("Yes", "No"))
+predicted_classes <- factor(predicted_classes, levels = c(1, 0), labels = c("Yes", "No"))
+
+accuracy <- mean(predicted_classes == actual_classes)
+print(paste("Accuracy of the model: ", accuracy))
+
+conf_matrix <- confusionMatrix(predicted_classes, actual_classes)
+print(conf_matrix)
+
+roc_result <- roc(actual_classes, predicted_probs)
+plot(roc_result, main="ROC Curve")
+auc_score <- auc(roc_result)
+text(x = 0.3, y = 0.3, labels = paste("AUC =", round(auc_score, 3)), cex = 1.0, col = "blue")
+
+```
+
+
